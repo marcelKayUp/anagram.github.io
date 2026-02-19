@@ -25,17 +25,19 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #006449;
+            background-color: var(--game-bg-color, #006449);
             font-family: 'GT Pantheon Display', 'GT Pantheon', Georgia, 'Times New Roman', serif;
             /* Safe Area für iPad/iPhone (Notch, Home-Indicator) bei viewport-fit=cover */
             padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
             overscroll-behavior: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         #game-container {
             width: 100vw;
             height: 100vh;
             position: relative;
+            margin-top: var(--game-container-margin-top, -2rem);
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -158,6 +160,7 @@
             position: relative;
             cursor: grab;
             touch-action: none;
+            -webkit-tap-highlight-color: transparent;
             transition: filter 0.3s ease, opacity 0.3s ease, letter-spacing 0.3s ease;
             width: var(--letter-size, 3rem);
             height: var(--letter-size, 3rem);
@@ -268,7 +271,8 @@
         }
 
         .drop-slot.filled {
-            border-bottom: var(--underline-thickness, 2px) solid rgba(255, 255, 255, 0.3);
+            border-bottom: none;
+            padding-bottom: 0;
         }
 
         /* Einheitliche Schrift- und Slotgrößen für alle Wörter */
@@ -480,6 +484,23 @@
             text-align: right;
         }
 
+        .control-group input[type="color"] {
+            display: block;
+            width: 56px;
+            height: 56px;
+            padding: 0;
+            border: 3px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            cursor: pointer;
+            background: none;
+            margin-bottom: 0.3rem;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        .control-group input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        .control-group input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
+        .control-group input[type="color"]::-moz-color-swatch { border: none; border-radius: 50%; }
+
         .control-section {
             margin-bottom: 1rem;
             padding-bottom: 0.5rem;
@@ -526,6 +547,24 @@
         <h3>Einstellungen</h3>
         
         <div class="control-section">
+            <h4>Hintergrund</h4>
+            <div class="control-group">
+                <label for="bg-color">Hintergrundfarbe</label>
+                <input type="color" id="bg-color" value="#006449" title="Hintergrundfarbe wählen">
+                <div class="value-display" id="bg-color-value">#006449</div>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h4>Container</h4>
+            <div class="control-group">
+                <label for="container-margin-top">Vertikale Position (rem)</label>
+                <input type="range" id="container-margin-top" min="-8" max="2" step="0.5" value="-2">
+                <div class="value-display" id="container-margin-top-value">-2rem</div>
+            </div>
+        </div>
+
+        <div class="control-section">
             <h4>Bewegung der Buchstaben</h4>
             <div class="control-group">
                 <label for="wobble-intensity-x">Seitliche Bewegung (px)</label>
@@ -534,23 +573,23 @@
             </div>
             <div class="control-group">
                 <label for="wobble-intensity-y">Höhenbewegung (px)</label>
-                <input type="range" id="wobble-intensity-y" min="0" max="10" step="0.5" value="1">
-                <div class="value-display" id="wobble-intensity-y-value">1px</div>
+                <input type="range" id="wobble-intensity-y" min="0" max="10" step="0.5" value="4.5">
+                <div class="value-display" id="wobble-intensity-y-value">4.5px</div>
             </div>
             <div class="control-group">
                 <label for="wobble-intensity-rot">Drehung (Grad)</label>
-                <input type="range" id="wobble-intensity-rot" min="0" max="10" step="0.5" value="2">
-                <div class="value-display" id="wobble-intensity-rot-value">2°</div>
+                <input type="range" id="wobble-intensity-rot" min="0" max="10" step="0.5" value="5.5">
+                <div class="value-display" id="wobble-intensity-rot-value">5.5°</div>
             </div>
             <div class="control-group">
                 <label for="wobble-duration-min">Bewegungsgeschwindigkeit (min)</label>
-                <input type="range" id="wobble-duration-min" min="1" max="8" step="0.5" value="3.5">
-                <div class="value-display" id="wobble-duration-min-value">3.5s</div>
+                <input type="range" id="wobble-duration-min" min="1" max="8" step="0.5" value="8">
+                <div class="value-display" id="wobble-duration-min-value">8s</div>
             </div>
             <div class="control-group">
                 <label for="wobble-duration-max">Bewegungsgeschwindigkeit (max)</label>
-                <input type="range" id="wobble-duration-max" min="1" max="8" step="0.5" value="4.5">
-                <div class="value-display" id="wobble-duration-max-value">4.5s</div>
+                <input type="range" id="wobble-duration-max" min="1" max="8" step="0.5" value="6.5">
+                <div class="value-display" id="wobble-duration-max-value">6.5s</div>
             </div>
         </div>
 
@@ -558,8 +597,8 @@
             <h4>Unschärfe-Effekt</h4>
             <div class="control-group">
                 <label for="blur-max">Unschärfe-Stärke (px)</label>
-                <input type="range" id="blur-max" min="0" max="10" step="0.5" value="3">
-                <div class="value-display" id="blur-max-value">3px</div>
+                <input type="range" id="blur-max" min="0" max="10" step="0.5" value="6">
+                <div class="value-display" id="blur-max-value">6px</div>
             </div>
             <div class="control-group">
                 <label for="blur-opacity-min">Transparenz (min)</label>
@@ -582,13 +621,13 @@
             <h4>Ausgangstext</h4>
             <div class="control-group">
                 <label for="source-line-height">Zeilenabstand (rem)</label>
-                <input type="range" id="source-line-height" min="0.5" max="5" step="0.1" value="2">
-                <div class="value-display" id="source-line-height-value">2rem</div>
+                <input type="range" id="source-line-height" min="0.5" max="5" step="0.1" value="3.8">
+                <div class="value-display" id="source-line-height-value">3.8rem</div>
             </div>
             <div class="control-group">
                 <label for="source-letter-spacing">Abstand zwischen Buchstaben (px)</label>
-                <input type="range" id="source-letter-spacing" min="-5" max="20" step="0.5" value="0">
-                <div class="value-display" id="source-letter-spacing-value">0px</div>
+                <input type="range" id="source-letter-spacing" min="-5" max="20" step="0.5" value="-2">
+                <div class="value-display" id="source-letter-spacing-value">-2px</div>
             </div>
         </div>
 
@@ -596,18 +635,18 @@
             <h4>Schriftgröße</h4>
             <div class="control-group">
                 <label for="letter-size">Schriftgröße (rem)</label>
-                <input type="range" id="letter-size" min="2" max="10" step="0.1" value="3">
-                <div class="value-display" id="letter-size-value">3rem</div>
+                <input type="range" id="letter-size" min="2" max="10" step="0.1" value="3.8">
+                <div class="value-display" id="letter-size-value">3.8rem</div>
             </div>
             <div class="control-group">
                 <label for="target-line-height">Zeilenabstand (rem)</label>
-                <input type="range" id="target-line-height" min="0.5" max="5" step="0.1" value="1">
-                <div class="value-display" id="target-line-height-value">1rem</div>
+                <input type="range" id="target-line-height" min="0.5" max="5" step="0.1" value="0.7">
+                <div class="value-display" id="target-line-height-value">0.7rem</div>
             </div>
             <div class="control-group">
                 <label for="target-letter-spacing">Abstand zwischen Buchstaben (px)</label>
-                <input type="range" id="target-letter-spacing" min="-5" max="20" step="0.5" value="10">
-                <div class="value-display" id="target-letter-spacing-value">10px</div>
+                <input type="range" id="target-letter-spacing" min="-5" max="20" step="0.5" value="5">
+                <div class="value-display" id="target-letter-spacing-value">5px</div>
             </div>
         </div>
 
@@ -615,13 +654,13 @@
             <h4>Unterstriche</h4>
             <div class="control-group">
                 <label for="underline-thickness">Dicke der Unterstriche (px)</label>
-                <input type="range" id="underline-thickness" min="1" max="10" step="0.5" value="2">
-                <div class="value-display" id="underline-thickness-value">2px</div>
+                <input type="range" id="underline-thickness" min="1" max="10" step="0.5" value="1">
+                <div class="value-display" id="underline-thickness-value">1px</div>
             </div>
             <div class="control-group">
                 <label for="underline-spacing">Abstand zu den Buchstaben (rem)</label>
-                <input type="range" id="underline-spacing" min="0" max="2" step="0.1" value="0.5">
-                <div class="value-display" id="underline-spacing-value">0.5rem</div>
+                <input type="range" id="underline-spacing" min="0" max="2" step="0.1" value="0">
+                <div class="value-display" id="underline-spacing-value">0rem</div>
             </div>
         </div>
 
@@ -629,13 +668,13 @@
             <h4>Pfeil</h4>
             <div class="control-group">
                 <label for="arrow-size">Größe des Pfeils (rem)</label>
-                <input type="range" id="arrow-size" min="4" max="10" step="0.1" value="7">
-                <div class="value-display" id="arrow-size-value">7rem</div>
+                <input type="range" id="arrow-size" min="4" max="10" step="0.1" value="5.8">
+                <div class="value-display" id="arrow-size-value">5.8rem</div>
             </div>
             <div class="control-group">
                 <label for="arrow-pos-y">Position vertikal (rem)</label>
-                <input type="range" id="arrow-pos-y" min="0" max="100" step="5" value="50">
-                <div class="value-display" id="arrow-pos-y-value">-9rem</div>
+                <input type="range" id="arrow-pos-y" min="0" max="100" step="5" value="80">
+                <div class="value-display" id="arrow-pos-y-value">-7.2rem</div>
             </div>
         </div>
 
@@ -643,13 +682,13 @@
             <h4>Gewinn-Bild</h4>
             <div class="control-group">
                 <label for="win-image-pos-y">Position vertikal (%)</label>
-                <input type="range" id="win-image-pos-y" min="0" max="100" step="1" value="50">
-                <div class="value-display" id="win-image-pos-y-value">50%</div>
+                <input type="range" id="win-image-pos-y" min="0" max="100" step="1" value="55">
+                <div class="value-display" id="win-image-pos-y-value">55%</div>
             </div>
             <div class="control-group">
                 <label for="win-image-scale">Größe (%)</label>
-                <input type="range" id="win-image-scale" min="75" max="175" step="1" value="150">
-                <div class="value-display" id="win-image-scale-value">150%</div>
+                <input type="range" id="win-image-scale" min="75" max="175" step="1" value="110">
+                <div class="value-display" id="win-image-scale-value">110%</div>
             </div>
         </div>
 
@@ -861,29 +900,33 @@
          */
         let animationControls = {
             wobbleIntensityX: 2,
-            wobbleIntensityY: 1,
-            wobbleIntensityRot: 2,
-            wobbleDurationMin: 3.5,
-            wobbleDurationMax: 4.5,
-            blurMax: 3,
+            wobbleIntensityY: 4.5,
+            wobbleIntensityRot: 5.5,
+            wobbleDurationMin: 8,
+            wobbleDurationMax: 6.5,
+            blurMax: 6,
             blurOpacityMin: 0.7,
             blurDurationMin: 2.5,
             blurDurationMax: 3.5,
-            sourceLineHeight: 2,
-            sourceLetterSpacing: 0,
-            targetLineHeight: 1,
-            targetLetterSpacing: 10,
+            sourceLineHeight: 3.8,
+            sourceLetterSpacing: -2,
+            targetLineHeight: 0.7,
+            targetLetterSpacing: 5,
             // Schriftgröße (einheitlich)
-            letterSize: 3,
+            letterSize: 3.8,
             // Neue Controls für Unterstriche
-            underlineThickness: 2,
-            underlineSpacing: 0.5,
-            // Pfeil-Größe und vertikale Position (0 = -10rem, 100 = 2rem)
-            arrowSize: 7,
-            arrowPosY: 50,
-            // Gewinn-Bild: vertikale Position (0–100 %) und Größe (75–175 %, Standard 150 %)
-            winImagePosY: 50,
-            winImageScale: 150
+            underlineThickness: 1,
+            underlineSpacing: 0,
+            // Pfeil-Größe und vertikale Position (0 = -12rem, 100 = -6rem; 80 = -7.2rem)
+            arrowSize: 5.8,
+            arrowPosY: 80,
+            // Gewinn-Bild: vertikale Position (0–100 %) und Größe (75–175 %, Standard 110 %)
+            winImagePosY: 55,
+            winImageScale: 110,
+            // Container: vertikale Position (margin-top in rem)
+            containerMarginTop: -2,
+            // Hintergrundfarbe (Hex)
+            backgroundColor: '#006449'
         };
 
         // ============================================================================
@@ -904,6 +947,8 @@
             updateArrowSize();
             updateArrowPosition();
             updateWinImageStyle();
+            updateContainerPosition();
+            updateBackgroundColor();
             // Anzeige-Werte aktualisieren
             updateDisplayValues();
             createLetters();
@@ -927,6 +972,9 @@
             document.getElementById('arrow-size-value').textContent = animationControls.arrowSize + 'rem';
             document.getElementById('win-image-pos-y-value').textContent = animationControls.winImagePosY + '%';
             document.getElementById('win-image-scale-value').textContent = animationControls.winImageScale + '%';
+            document.getElementById('container-margin-top-value').textContent = animationControls.containerMarginTop + 'rem';
+            document.getElementById('bg-color-value').textContent = animationControls.backgroundColor;
+            document.getElementById('bg-color').value = animationControls.backgroundColor;
         }
 
         // ============================================================================
@@ -1104,6 +1152,22 @@
                 updateWinImageStyle();
             });
 
+            // Container: vertikale Position
+            const containerMarginTop = document.getElementById('container-margin-top');
+            containerMarginTop.addEventListener('input', (e) => {
+                animationControls.containerMarginTop = parseFloat(e.target.value);
+                document.getElementById('container-margin-top-value').textContent = animationControls.containerMarginTop + 'rem';
+                updateContainerPosition();
+            });
+
+            // Hintergrundfarbe
+            const bgColor = document.getElementById('bg-color');
+            bgColor.addEventListener('input', (e) => {
+                animationControls.backgroundColor = e.target.value;
+                document.getElementById('bg-color-value').textContent = animationControls.backgroundColor;
+                updateBackgroundColor();
+            });
+
             // Debug: Gewinn-Event-Button
             const triggerWinButton = document.getElementById('trigger-win-button');
             triggerWinButton.addEventListener('click', () => {
@@ -1178,6 +1242,22 @@
         function updateArrowPosition() {
             const rem = arrowPosYToRem(animationControls.arrowPosY);
             document.documentElement.style.setProperty('--arrow-pos-y', `${rem}rem`);
+        }
+
+        /**
+         * Aktualisiert die vertikale Position des Spiel-Containers (margin-top)
+         * @returns {void}
+         */
+        function updateContainerPosition() {
+            document.documentElement.style.setProperty('--game-container-margin-top', `${animationControls.containerMarginTop}rem`);
+        }
+
+        /**
+         * Aktualisiert die Hintergrundfarbe (CSS-Variable)
+         * @returns {void}
+         */
+        function updateBackgroundColor() {
+            document.documentElement.style.setProperty('--game-bg-color', animationControls.backgroundColor);
         }
 
         /**
@@ -1384,6 +1464,10 @@
             document.addEventListener('touchstart', resetInactivityTimer, { passive: true });
             document.addEventListener('mousedown', resetInactivityTimer);
             document.addEventListener('keydown', resetInactivityTimer);
+
+            // Mobil: Textauswahl (blaue Hervorhebung) und Kontextmenü verhindern, Drag bleibt unberührt
+            document.addEventListener('selectstart', (e) => e.preventDefault());
+            document.addEventListener('contextmenu', (e) => e.preventDefault());
         }
 
         // ============================================================================
