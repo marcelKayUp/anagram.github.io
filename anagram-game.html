@@ -46,6 +46,10 @@
             max-width: 100vw;
             max-height: 100vh;
         }
+        /* Im Gewinn-Modus Game-Container über dem Feuerwerks-Canvas, damit das Bild sichtbar bleibt */
+        body.win-mode #game-container {
+            z-index: 1001;
+        }
 
         #fireworks-canvas {
             position: fixed;
@@ -57,7 +61,7 @@
             z-index: 1000;
         }
 
-        /* Gewinn-Bild: blendet dort ein, wo die oberen Buchstaben waren; Feuerwerk liegt darüber (z-index 1000) */
+        /* Gewinn-Bild: über dem Feuerwerks-Canvas (z-index 1001), damit es nicht vom Fade-Overlay abgedunkelt wird */
         #win-image-container {
             position: absolute;
             top: 0;
@@ -75,6 +79,7 @@
         }
         #win-image-container.visible {
             opacity: 1;
+            z-index: 1001; /* über #fireworks-canvas (1000), Bild bleibt sichtbar */
         }
         /* Beim Gewinn Buchstaben ausblenden, damit nur das Bild sichtbar ist */
         #words-container.win-image-visible .word {
@@ -103,7 +108,7 @@
             align-items: center;
             gap: var(--source-line-height, 2rem);
             padding: 1rem 0;
-            transition: transform 0.5s ease-out, gap 0.3s ease;
+            transition: transform 0.5s ease-out;
             transform: translateY(0);
         }
 
@@ -115,7 +120,8 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            gap: var(--source-letter-spacing, 0px);
+            /* max() verhindert negativen gap (Flexbox ungültig) und stabilisiert Reflow */
+            gap: max(0px, var(--source-letter-spacing, 0px));
             position: relative;
         }
 
@@ -215,14 +221,19 @@
         }
 
         .letter-placeholder {
-            width: var(--letter-size, 3rem);
-            height: var(--letter-size, 3rem);
-            min-width: var(--letter-size, 3rem);
-            min-height: var(--letter-size, 3rem);
-            display: inline-block;
-            opacity: 0.3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
             pointer-events: none;
             visibility: visible;
+            letter-spacing: var(--source-letter-spacing, 0px);
+        }
+        
+        .letter-placeholder svg {
+            width: 100%;
+            height: 100%;
+            display: block;
         }
 
         #drop-zone {
@@ -273,6 +284,7 @@
         .drop-slot.filled {
             border-bottom: none;
             padding-bottom: 0;
+            opacity: 0.5;
         }
 
         /* Einheitliche Schrift- und Slotgrößen für alle Wörter */
@@ -559,8 +571,8 @@
             <h4>Container</h4>
             <div class="control-group">
                 <label for="container-margin-top">Vertikale Position (rem)</label>
-                <input type="range" id="container-margin-top" min="-8" max="2" step="0.5" value="-2">
-                <div class="value-display" id="container-margin-top-value">-2rem</div>
+                <input type="range" id="container-margin-top" min="-8" max="2" step="0.5" value="-3.5">
+                <div class="value-display" id="container-margin-top-value">-3.5rem</div>
             </div>
         </div>
 
@@ -635,8 +647,8 @@
             <h4>Schriftgröße</h4>
             <div class="control-group">
                 <label for="letter-size">Schriftgröße (rem)</label>
-                <input type="range" id="letter-size" min="2" max="10" step="0.1" value="3.8">
-                <div class="value-display" id="letter-size-value">3.8rem</div>
+                <input type="range" id="letter-size" min="2" max="10" step="0.1" value="3.1">
+                <div class="value-display" id="letter-size-value">3.1rem</div>
             </div>
             <div class="control-group">
                 <label for="target-line-height">Zeilenabstand (rem)</label>
@@ -867,6 +879,9 @@
         /** Array aller erstellten Buchstaben-Elemente */
         let letters = [];
         
+        /** Map mit ursprünglichen Positionen der Buchstaben: 'wordIndex-letterIndex' -> {x, y} */
+        let letterOriginalPositions = new Map();
+        
         /** Aktuell gezogener Buchstabe */
         let draggedLetter = null;
         
@@ -881,6 +896,9 @@
         
         /** Timer für automatischen Reset bei Inaktivität */
         let resetTimer = null;
+        
+        /** Flag, das anzeigt, ob ein Reset gerade durchgeführt wird */
+        let isResetting = false;
         
         // Gecachte DOM-Elemente
         let cachedElements = {
@@ -913,7 +931,7 @@
             targetLineHeight: 0.7,
             targetLetterSpacing: 5,
             // Schriftgröße (einheitlich)
-            letterSize: 3.8,
+            letterSize: 3.1,
             // Neue Controls für Unterstriche
             underlineThickness: 1,
             underlineSpacing: 0,
@@ -924,7 +942,7 @@
             winImagePosY: 55,
             winImageScale: 110,
             // Container: vertikale Position (margin-top in rem)
-            containerMarginTop: -2,
+            containerMarginTop: -3.5,
             // Hintergrundfarbe (Hex)
             backgroundColor: '#006449'
         };
@@ -1400,6 +1418,42 @@
                     letters.push(letter);
                 });
             });
+            
+            // Nach mehrfachem Delay ursprüngliche Positionen speichern (nachdem Layout vollständig fertig ist)
+            // Verwende requestAnimationFrame für bessere Timing-Genauigkeit
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        saveOriginalLetterPositions();
+                    });
+                });
+            });
+        }
+        
+        /**
+         * Speichert die ursprünglichen Positionen aller Buchstaben
+         * @returns {void}
+         */
+        function saveOriginalLetterPositions() {
+            try {
+                letterOriginalPositions.clear();
+                letters.forEach(letter => {
+                    // Prüfe ob Buchstabe noch im DOM ist
+                    if (!letter.parentNode || !document.body.contains(letter)) {
+                        return;
+                    }
+                    const wordIndex = getDatasetInt(letter, 'originalWordIndex');
+                    const letterIndex = getDatasetInt(letter, 'letterIndex');
+                    const key = `${wordIndex}-${letterIndex}`;
+                    const center = getElementCenter(letter);
+                    // Prüfe ob Position gültig ist (nicht 0,0 wenn Element nicht sichtbar)
+                    if (center.x !== 0 || center.y !== 0 || letter.getBoundingClientRect().width > 0) {
+                        letterOriginalPositions.set(key, { x: center.x, y: center.y });
+                    }
+                });
+            } catch (error) {
+                console.error('Fehler beim Speichern der Buchstaben-Positionen:', error);
+            }
         }
 
         /**
@@ -1543,6 +1597,9 @@
             e.preventDefault();
             resetInactivityTimer();
             
+            // Verhindere Drag-Start während eines Resets
+            if (isResetting) return;
+            
             const letter = e.target.closest('.letter');
             if (!letter || letter.classList.contains('dragging')) return;
             
@@ -1595,39 +1652,27 @@
                 placeholder.dataset.placeholderFor = letter.dataset.letter;
                 placeholder.dataset.originalWord = letter.dataset.originalWord;
                 placeholder.dataset.letterIndex = letter.dataset.letterIndex;
+                // SVG-Inhalt kopieren, damit Platzhalter die gleiche Breite einnimmt
+                placeholder.innerHTML = letter.innerHTML;
                 
-                // Platzhalter an der ursprünglichen Position einfügen
-                const letterIndex = getDatasetInt(letter, 'letterIndex');
-                const existingLetters = letter.parentNode.querySelectorAll('.letter');
+                // Exakte Layout-Größe des ursprünglichen Buchstabens übernehmen
+                // Verwende CSS-Variablen statt getBoundingClientRect(), da Transforms die visuelle Größe ändern,
+                // aber nicht die Layout-Größe (die immer var(--letter-size) × var(--letter-size) ist)
+                const computedSize = getComputedStyle(document.documentElement)
+                    .getPropertyValue('--letter-size').trim() || '3rem';
+                placeholder.style.width = computedSize;
+                placeholder.style.height = computedSize;
+                placeholder.style.minWidth = computedSize;
+                placeholder.style.minHeight = computedSize;
                 
-                // Korrekten Einfügepunkt finden
-                let insertBefore = null;
-                for (let i = 0; i < existingLetters.length; i++) {
-                    const existingIndex = getDatasetInt(existingLetters[i], 'letterIndex');
-                    if (existingIndex > letterIndex) {
-                        insertBefore = existingLetters[i];
-                        break;
-                    }
-                }
-                
-                if (insertBefore) {
-                    letter.parentNode.insertBefore(placeholder, insertBefore);
-                } else {
-                    letter.parentNode.appendChild(placeholder);
-                }
-                
-                letterPlaceholder = placeholder;
-                
-                // Buchstaben temporär vom Container entfernen, um Transform-Probleme zu vermeiden
-                if (letter.parentNode) {
-                    letter.parentNode.removeChild(letter);
+                // Platzhalter ersetzt Buchstaben in einem Schritt (replaceChild), kein N+1-Zustand, ein Reflow
+                const wordContainer = letter.parentNode;
+                if (wordContainer) {
+                    wordContainer.replaceChild(placeholder, letter);
                 }
                 document.body.appendChild(letter);
-                
-                // Transform zurücksetzen, um saubere Positionierung sicherzustellen
                 letter.style.transform = '';
-                
-                // Reflow erzwingen
+                letterPlaceholder = placeholder;
                 void letter.offsetHeight;
             }
             
@@ -1661,7 +1706,8 @@
             e.preventDefault();
 
             const coords = getEventCoordinates(e);
-            updateLetterPosition(draggedLetter, coords.x, coords.y);
+            // Offset berücksichtigen, damit der Buchstabe an der Stelle bleibt, an der er gegriffen wurde
+            updateLetterPosition(draggedLetter, coords.x - dragOffset.x, coords.y - dragOffset.y);
         }
 
         /**
@@ -1743,6 +1789,86 @@
         // ============================================================================
         
         /**
+         * Berechnet die Position eines Buchstabens basierend auf den bereits vorhandenen Buchstaben im Container
+         * Dies stellt sicher, dass die Position korrekt ist, auch wenn andere Buchstaben noch fehlen
+         * @param {HTMLElement} letter - Der Buchstabe
+         * @param {HTMLElement} wordContainer - Der Wort-Container
+         * @param {number} letterIndex - Der Index des Buchstabens
+         * @returns {{x: number, y: number}|null} - Die berechnete Position oder null
+         */
+        function calculateLetterPositionFromNeighbors(letter, wordContainer, letterIndex) {
+            if (!wordContainer) return null;
+            
+            // Sammle alle vorhandenen Buchstaben (inkl. Platzhalter) im Container, sortiert nach Index
+            const allElements = Array.from(wordContainer.querySelectorAll('.letter:not(.dragging), .letter-placeholder'));
+            allElements.sort((a, b) => {
+                const indexA = getDatasetInt(a, 'letterIndex');
+                const indexB = getDatasetInt(b, 'letterIndex');
+                return indexA - indexB;
+            });
+            
+            // Finde direkte Nachbarn
+            let leftNeighbor = null;
+            let rightNeighbor = null;
+            
+            for (let i = 0; i < allElements.length; i++) {
+                const elemIndex = getDatasetInt(allElements[i], 'letterIndex');
+                if (elemIndex < letterIndex) {
+                    leftNeighbor = allElements[i];
+                } else if (elemIndex > letterIndex) {
+                    rightNeighbor = allElements[i];
+                    break;
+                }
+            }
+            
+            // Berechne Position basierend auf Nachbarn
+            if (leftNeighbor && rightNeighbor) {
+                // Zwischen zwei Nachbarn: Mitte zwischen beiden
+                const leftCenter = getElementCenter(leftNeighbor);
+                const rightCenter = getElementCenter(rightNeighbor);
+                return {
+                    x: (leftCenter.x + rightCenter.x) / 2,
+                    y: (leftCenter.y + rightCenter.y) / 2
+                };
+            } else if (leftNeighbor) {
+                // Nur linker Nachbar: rechts daneben mit korrektem Abstand
+                const leftRect = leftNeighbor.getBoundingClientRect();
+                const letterSpacing = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--source-letter-spacing')) || 0;
+                const leftCenter = getElementCenter(leftNeighbor);
+                return {
+                    x: leftRect.right + letterSpacing + (leftRect.width / 2),
+                    y: leftCenter.y
+                };
+            } else if (rightNeighbor) {
+                // Nur rechter Nachbar: links davor mit korrektem Abstand
+                const rightRect = rightNeighbor.getBoundingClientRect();
+                const letterSpacing = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--source-letter-spacing')) || 0;
+                const rightCenter = getElementCenter(rightNeighbor);
+                return {
+                    x: rightRect.left - letterSpacing - (rightRect.width / 2),
+                    y: rightCenter.y
+                };
+            } else {
+                // Keine Nachbarn: Verwende gespeicherte Position als Fallback
+                const wordIndex = getDatasetInt(letter, 'originalWordIndex');
+                const key = `${wordIndex}-${letterIndex}`;
+                return letterOriginalPositions.get(key) || null;
+            }
+        }
+        
+        /**
+         * Gibt die gespeicherte ursprüngliche Position eines Buchstabens zurück
+         * @param {HTMLElement} letter - Der Buchstabe
+         * @returns {{x: number, y: number}|null} - Die ursprüngliche Position oder null
+         */
+        function getOriginalLetterPosition(letter) {
+            const wordIndex = getDatasetInt(letter, 'originalWordIndex');
+            const letterIndex = getDatasetInt(letter, 'letterIndex');
+            const key = `${wordIndex}-${letterIndex}`;
+            return letterOriginalPositions.get(key) || null;
+        }
+
+        /**
          * Setzt einen Buchstaben mit sanfter Animation an seine ursprüngliche Position zurück
          * @param {HTMLElement} letter - Das Buchstaben-Element
          * @param {number|null} startX - Start-X-Position (optional, wird sonst aus getBoundingClientRect ermittelt)
@@ -1771,22 +1897,31 @@
             letter.style.zIndex = Z_INDEX_ANIMATION;
             letter.style.transition = `left ${ANIMATION_DURATION}ms ease-out, top ${ANIMATION_DURATION}ms ease-out`;
             
-            // Zielposition berechnen - zuerst prüfen ob Platzhalter vorhanden ist
+            // Zielposition berechnen
             let targetX, targetY;
             const originalWord = letter.dataset.originalWord;
             const wordContainerId = `word-${originalWord.toLowerCase()}`;
             const wordContainer = document.getElementById(wordContainerId);
+            const letterIndex = getDatasetInt(letter, 'letterIndex');
             
-            if (letterPlaceholder && letterPlaceholder.parentNode === wordContainer) {
-                // Platzhalter vorhanden - verwende dessen Position
-                const center = getElementCenter(letterPlaceholder);
+            const placeholder = getPlaceholderForLetter(letter);
+            if (placeholder && placeholder.parentNode === wordContainer) {
+                const center = getElementCenter(placeholder);
                 targetX = center.x;
                 targetY = center.y;
             } else if (wordContainer) {
-                // Kein Platzhalter - verwende Container-Mitte als Fallback
-                const center = getElementCenter(wordContainer);
-                targetX = center.x;
-                targetY = center.y;
+                // Berechne Position dynamisch basierend auf bereits vorhandenen Buchstaben
+                // Dies stellt sicher, dass die Position korrekt ist, auch wenn andere Buchstaben noch fehlen
+                const calculatedPos = calculateLetterPositionFromNeighbors(letter, wordContainer, letterIndex);
+                if (calculatedPos) {
+                    targetX = calculatedPos.x;
+                    targetY = calculatedPos.y;
+                } else {
+                    // Fallback: Container-Mitte
+                    const center = getElementCenter(wordContainer);
+                    targetX = center.x;
+                    targetY = center.y;
+                }
             } else {
                 // Kein Container gefunden - direkt zurück
                 returnLetterToOriginalPosition(letter);
@@ -1963,6 +2098,40 @@
         }
 
         /**
+         * Findet den Platzhalter für einen Buchstaben im Wort-Container (DOM-Suche nach data-original-word und data-letter-index).
+         * Ermöglicht korrekte Zuordnung auch bei mehreren gezogenen Buchstaben aus demselben Wort.
+         * @param {HTMLElement} letter - Das Buchstaben-Element
+         * @returns {HTMLElement|null} Der Platzhalter oder null
+         */
+        function getPlaceholderForLetter(letter) {
+            const originalWord = letter.dataset.originalWord;
+            if (!originalWord) return null;
+            const wordContainerId = `word-${originalWord.toLowerCase()}`;
+            const wordContainer = document.getElementById(wordContainerId);
+            if (!wordContainer) return null;
+            const letterIndex = letter.dataset.letterIndex;
+            const placeholders = wordContainer.querySelectorAll('.letter-placeholder');
+            for (let i = 0; i < placeholders.length; i++) {
+                const p = placeholders[i];
+                if (p.dataset.originalWord === originalWord && p.dataset.letterIndex === letterIndex) return p;
+            }
+            return null;
+        }
+
+        /**
+         * Entfernt den Platzhalter für einen Buchstaben, falls vorhanden (z. B. beim Reset).
+         * @param {HTMLElement} letter - Das Buchstaben-Element
+         * @returns {void}
+         */
+        function removeLetterPlaceholder(letter) {
+            const placeholder = getPlaceholderForLetter(letter);
+            if (placeholder && placeholder.parentNode) {
+                placeholder.parentNode.removeChild(placeholder);
+                if (letterPlaceholder === placeholder) letterPlaceholder = null;
+            }
+        }
+
+        /**
          * Platziert einen Buchstaben in einem Drop-Slot
          * @param {HTMLElement} letter - Das Buchstaben-Element
          * @param {HTMLElement} slot - Der Drop-Slot
@@ -1971,9 +2140,8 @@
         function placeLetterInSlot(letter, slot) {
             // Dragging-Klasse entfernen
             letter.classList.remove('dragging');
-            
-            // Platzhalter NICHT löschen - bleibt bestehen, wenn Buchstabe erfolgreich platziert wird
-            
+            // Platzhalter bleibt bestehen, damit der Wort-Container die gleiche Breite behält (justify-content: center)
+
             // Von aktuellem Parent entfernen falls vorhanden
             if (letter.parentNode) {
                 letter.parentNode.removeChild(letter);
@@ -2073,48 +2241,38 @@
                     letter.style.animationDelay = `var(--wobble-delay, 0s), var(--blur-delay, 0s)`;
                 }
                 
-                // Platzhalter entfernen, falls vorhanden
-                if (letterPlaceholder && letterPlaceholder.parentNode === wordContainer) {
-                    const placeholderIndex = getDatasetInt(letterPlaceholder, 'letterIndex');
+                // Atomarer Tausch: Platzhalter durch Buchstaben ersetzen (kein N+1-Zustand, kein Waisen-Platzhalter)
+                const placeholder = getPlaceholderForLetter(letter);
+                if (placeholder && placeholder.parentNode === wordContainer) {
+                    wordContainer.replaceChild(letter, placeholder);
+                    if (letterPlaceholder === placeholder) letterPlaceholder = null;
+                } else {
+                    // Kein Platzhalter (z. B. Buchstabe kam aus Slot) – Einfügepunkt suchen und einfügen
                     const letterIndex = getDatasetInt(letter, 'letterIndex');
-                    
-                    // Nur entfernen, wenn es der richtige Platzhalter ist
-                    if (placeholderIndex === letterIndex) {
-                        wordContainer.removeChild(letterPlaceholder);
-                        letterPlaceholder = null;
-                    }
-                }
-                
-                // Zurück zum ursprünglichen Wort-Container in korrekter Reihenfolge hinzufügen
-                const letterIndex = getDatasetInt(letter, 'letterIndex');
-                const existingLetters = wordContainer.querySelectorAll('.letter:not(.letter-placeholder)');
-                
-                // Korrekten Einfügepunkt basierend auf letterIndex finden
-                let insertBefore = null;
-                for (let i = 0; i < existingLetters.length; i++) {
-                    const existingIndex = getDatasetInt(existingLetters[i], 'letterIndex');
-                    if (existingIndex > letterIndex) {
-                        insertBefore = existingLetters[i];
-                        break;
-                    }
-                }
-                
-                // Falls kein passender Buchstabe gefunden, prüfe auch Platzhalter
-                if (!insertBefore) {
-                    const placeholders = wordContainer.querySelectorAll('.letter-placeholder');
-                    for (let i = 0; i < placeholders.length; i++) {
-                        const placeholderIndex = getDatasetInt(placeholders[i], 'letterIndex');
-                        if (placeholderIndex > letterIndex) {
-                            insertBefore = placeholders[i];
+                    const existingLetters = wordContainer.querySelectorAll('.letter:not(.letter-placeholder)');
+                    let insertBefore = null;
+                    for (let i = 0; i < existingLetters.length; i++) {
+                        const existingIndex = getDatasetInt(existingLetters[i], 'letterIndex');
+                        if (existingIndex > letterIndex) {
+                            insertBefore = existingLetters[i];
                             break;
                         }
                     }
-                }
-                
-                if (insertBefore) {
-                    wordContainer.insertBefore(letter, insertBefore);
-                } else {
-                    wordContainer.appendChild(letter);
+                    if (!insertBefore) {
+                        const placeholders = wordContainer.querySelectorAll('.letter-placeholder');
+                        for (let i = 0; i < placeholders.length; i++) {
+                            const placeholderIndex = getDatasetInt(placeholders[i], 'letterIndex');
+                            if (placeholderIndex > letterIndex) {
+                                insertBefore = placeholders[i];
+                                break;
+                            }
+                        }
+                    }
+                    if (insertBefore) {
+                        wordContainer.insertBefore(letter, insertBefore);
+                    } else {
+                        wordContainer.appendChild(letter);
+                    }
                 }
                 
                 // Basis-Transform-Werte NACH dem Hinzufügen zum Container wiederherstellen
@@ -2257,6 +2415,22 @@
          * @returns {void}
          */
         function resetGame() {
+            // Setze Reset-Flag, um neue Drags während des Resets zu verhindern
+            isResetting = true;
+            
+            // Wenn ein Drag aktiv ist, beende ihn zuerst
+            if (draggedLetter) {
+                draggedLetter.classList.remove('dragging');
+                returnLetterToOriginalPosition(draggedLetter);
+                draggedLetter = null;
+            }
+            
+            // Stoppe Win-Reset-Timer falls aktiv
+            if (winResetTimer) {
+                clearTimeout(winResetTimer);
+                winResetTimer = null;
+            }
+            
             // Stoppe Feuerwerks-Show wenn aktiv
             if (typeof stopFireworks === 'function') {
                 stopFireworks();
@@ -2376,10 +2550,13 @@
                 if (lettersToReset.length > 0) {
                     returnLettersToOriginalPositions(lettersToReset);
                 }
+                
+                // Reset-Flag zurücksetzen, nachdem alle Buchstaben zurückgesetzt wurden
+                // Warte zusätzlich auf die Animation, bevor der Flag zurückgesetzt wird
+                setTimeout(() => {
+                    isResetting = false;
+                }, ANIMATION_DURATION_LONG);
             }, 500); // Warten auf Drop-Zone-Fade-Out
-
-            // Gezogenen Buchstaben zurücksetzen
-            draggedLetter = null;
 
         }
 
@@ -2728,11 +2905,9 @@
         function animateFireworks() {
             if (!fireworksActive || !fireworksCanvas || !fireworksCtx) return;
             
-            // Transparenter Hintergrund (Overlay)
-            fireworksCtx.clearRect(0, 0, fireworksCanvas.width, fireworksCanvas.height);
-            
-            // Leichtes Fade für Schweif-Effekt
-            fireworksCtx.fillStyle = 'rgba(0, 100, 73, 0.05)'; // Hintergrundfarbe des Spiels
+            // Semi-transparentes Overlay pro Frame = Schweif-Fade. Deutlich stärker (0.2), damit sich
+            // kein weißer Nebel anreichert – sonst überdeckt der Canvas das Gewinnbild und hinterlässt Schatten.
+            fireworksCtx.fillStyle = 'rgba(0, 100, 73, 0.2)'; // Hintergrund #006449
             fireworksCtx.fillRect(0, 0, fireworksCanvas.width, fireworksCanvas.height);
 
             // Raketen aktualisieren und zeichnen (in-place, kein neues Array)
@@ -2827,6 +3002,8 @@
                 initFireworksCanvas();
                 if (!fireworksCanvas || !fireworksCtx) return;
             }
+            // Canvas einmal leeren, damit Gewinnbild von Anfang an durchscheint und keine alten Schatten bleiben
+            fireworksCtx.clearRect(0, 0, fireworksCanvas.width, fireworksCanvas.height);
             fireworksActive = true;
             fireworksRockets = [];
             fireworksLines = [];
@@ -2865,6 +3042,9 @@
             }
         }
 
+        /** Timer für automatisches Reset nach Gewinn */
+        let winResetTimer = null;
+
         /**
          * Event-Listener für Win-Condition
          * @param {Event} e - Das anagramSolved Event
@@ -2887,6 +3067,14 @@
                 cachedElements.dropArrow.classList.remove('visible');
             }
             startFireworks();
+            
+            // Automatisches Reset nach 30 Sekunden
+            if (winResetTimer) {
+                clearTimeout(winResetTimer);
+            }
+            winResetTimer = setTimeout(() => {
+                resetGame();
+            }, 30000); // 30 Sekunden
         }
         document.addEventListener('anagramSolved', handleAnagramSolved);
         
@@ -2898,12 +3086,12 @@
             initFireworksCanvas();
         }
         
-        window.addEventListener('DOMContentLoaded', initializeFireworks);
-        
-        // Fallback: Initialisiere auch sofort, falls DOM bereits geladen ist
+        // Initialisiere basierend auf DOM-Status
         if (document.readyState === 'loading') {
+            // DOM lädt noch - Listener registrieren
             window.addEventListener('DOMContentLoaded', initializeFireworks);
         } else {
+            // DOM bereits geladen - direkt initialisieren
             initializeFireworks();
         }
 
