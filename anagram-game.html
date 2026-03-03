@@ -46,7 +46,7 @@
             max-width: 100vw;
             max-height: 100vh;
         }
-        /* Im Gewinn-Modus Game-Container über dem Feuerwerks-Canvas, damit das Bild sichtbar bleibt */
+        /* Im Gewinn-Modus: Bild unten, Feuerwerk darüber (z-index 1002 > 1001) */
         body.win-mode #game-container {
             z-index: 1001;
         }
@@ -58,10 +58,10 @@
             width: 100%;
             height: 100%;
             pointer-events: none;
-            z-index: 1000;
+            z-index: 1002; /* über dem Gewinn-Bild (game-container 1001) */
         }
 
-        /* Gewinn-Bild: über dem Feuerwerks-Canvas (z-index 1001), damit es nicht vom Fade-Overlay abgedunkelt wird */
+        /* Gewinn-Bild: unter dem Feuerwerks-Canvas, damit das Feuerwerk über dem Bild erscheint */
         #win-image-container {
             position: absolute;
             top: 0;
@@ -79,7 +79,7 @@
         }
         #win-image-container.visible {
             opacity: 1;
-            z-index: 1001; /* über #fireworks-canvas (1000), Bild bleibt sichtbar */
+            z-index: 1; /* über Wörter im Container, Bild liegt unter dem Feuerwerks-Canvas */
         }
         /* Beim Gewinn Buchstaben ausblenden, damit nur das Bild sichtbar ist */
         #words-container.win-image-visible .word {
@@ -272,19 +272,26 @@
             /* Größen werden dynamisch basierend auf Schriftgröße gesetzt */
             width: var(--slot-width, 3rem);
             height: var(--slot-height, 3.9rem);
-            border-bottom: var(--underline-thickness, 2px) solid white;
+            /* Unterstrich: ursprüngliche Opacity (< 1) für leere Slots */
+            border-bottom: var(--underline-thickness, 2px) solid rgba(255, 255, 255, var(--underline-opacity-empty, 0.5));
             position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
             padding-bottom: var(--underline-spacing, 0.5rem);
             box-sizing: border-box;
+            transition: border-color 0.3s ease;
         }
 
         .drop-slot.filled {
-            border-bottom: none;
-            padding-bottom: 0;
-            opacity: 0.5;
+            /* Unterstrich: Opacity 1 wenn Buchstabe korrekt platziert */
+            border-bottom: var(--underline-thickness, 2px) solid rgba(255, 255, 255, 1);
+            padding-bottom: var(--underline-spacing, 0.5rem);
+        }
+
+        .drop-slot.filled .letter {
+            /* Buchstabe: keine Opacity-Änderung, bleibt bei 1 */
+            opacity: 1;
         }
 
         /* Einheitliche Schrift- und Slotgrößen für alle Wörter */
@@ -2899,15 +2906,51 @@
         const MAX_LINES = 500;
 
         /**
+         * Zeichnet das Gewinn-Bild als Hintergrund auf den Canvas.
+         * Verwendet die exakte Größe und Position des #win-image-container (getBoundingClientRect),
+         * damit die Darstellung mit den Einstellungen (winImageScale, winImagePosY) übereinstimmt.
+         * @returns {boolean} - true wenn Bild gezeichnet wurde
+         */
+        function drawWinImageBackground() {
+            const container = document.querySelector('#win-image-container.visible');
+            const img = container ? container.querySelector('img') : null;
+            if (!img || !img.complete || !img.naturalWidth || !fireworksCtx || !container) return false;
+            const rect = container.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return false;
+            const iw = img.naturalWidth;
+            const ih = img.naturalHeight;
+            const baseScale = Math.min(rect.width / iw, rect.height / ih);
+            const userScale = (animationControls && animationControls.winImageScale) ? animationControls.winImageScale / 100 : 1;
+            const scale = baseScale * userScale;
+            const dw = iw * scale;
+            const dh = ih * scale;
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const translateYPercent = (animationControls && animationControls.winImagePosY !== undefined) ? (animationControls.winImagePosY - 50) : 0;
+            const translateY = (translateYPercent / 100) * dh;
+            const dx = centerX - dw / 2;
+            const dy = centerY - dh / 2 + translateY;
+            fireworksCtx.drawImage(img, 0, 0, iw, ih, dx, dy, dw, dh);
+            return true;
+        }
+
+        /**
          * Feuerwerks-Animation-Loop
          * @returns {void}
          */
         function animateFireworks() {
             if (!fireworksActive || !fireworksCanvas || !fireworksCtx) return;
             
-            // Semi-transparentes Overlay pro Frame = Schweif-Fade. Deutlich stärker (0.2), damit sich
-            // kein weißer Nebel anreichert – sonst überdeckt der Canvas das Gewinnbild und hinterlässt Schatten.
-            fireworksCtx.fillStyle = 'rgba(0, 100, 73, 0.2)'; // Hintergrund #006449
+            // Gewinn-Bild als Hintergrund zeichnen, damit es unter dem Feuerwerk sichtbar bleibt
+            const imageDrawn = drawWinImageBackground();
+            if (!imageDrawn) {
+                // Fallback: Hintergrundfarbe wenn Bild nicht geladen
+                fireworksCtx.fillStyle = 'rgba(0, 100, 73, 1)';
+                fireworksCtx.fillRect(0, 0, fireworksCanvas.width, fireworksCanvas.height);
+            }
+            
+            // Semi-transparentes Overlay pro Frame = Schweif-Fade (reduziert, damit Gewinnbild sichtbar bleibt)
+            fireworksCtx.fillStyle = 'rgba(0, 100, 73, 0.05)';
             fireworksCtx.fillRect(0, 0, fireworksCanvas.width, fireworksCanvas.height);
 
             // Raketen aktualisieren und zeichnen (in-place, kein neues Array)
