@@ -164,10 +164,11 @@
             color: white;
             font-weight: normal;
             position: relative;
+            contain: layout; /* Layout-Box unabhängig von Transform/Animation */
             cursor: grab;
             touch-action: none;
             -webkit-tap-highlight-color: transparent;
-            transition: filter 0.3s ease, opacity 0.3s ease, letter-spacing 0.3s ease;
+            transition: filter 0.3s ease, opacity 0.3s ease; /* letter-spacing bewusst nicht: Slot→Word-Sprung 0→-2px verursacht Flackern */
             width: var(--letter-size, 3rem);
             height: var(--letter-size, 3rem);
             min-width: var(--letter-size, 3rem);
@@ -221,9 +222,17 @@
         }
 
         .letter-placeholder {
+            position: relative; /* Identisch zu .letter für konsistentes Layout (Safari/WebKit) */
+            transition: filter 0.3s ease, opacity 0.3s ease; /* Identisch zu .letter */
             display: flex;
             align-items: center;
             justify-content: center;
+            width: var(--letter-size, 3rem);
+            height: var(--letter-size, 3rem);
+            min-width: var(--letter-size, 3rem);
+            min-height: var(--letter-size, 3rem);
+            font-size: var(--letter-size, 3rem);
+            contain: layout; /* Identisch zu .letter für konsistentes Layout */
             opacity: 0;
             pointer-events: none;
             visibility: visible;
@@ -369,6 +378,11 @@
                 min-height: 65px;
             }
 
+            .letter-placeholder {
+                min-width: 65px;
+                min-height: 65px;
+            }
+
             #words-container {
                 width: 85%;
                 padding: 1.5rem 0;
@@ -407,6 +421,7 @@
         }
 
         #burger-menu {
+            display: none !important; /* Ausgeblendet */
             position: fixed;
             top: 10px;
             right: 10px;
@@ -1547,9 +1562,12 @@
             element.style.right = '';
             element.style.bottom = '';
             element.style.transform = '';
+            element.style.transition = '';
             element.style.zIndex = '';
             element.style.margin = '';
             element.style.padding = '';
+            element.style.opacity = '';
+            element.style.filter = '';
         }
         
         /**
@@ -1662,15 +1680,7 @@
                 // SVG-Inhalt kopieren, damit Platzhalter die gleiche Breite einnimmt
                 placeholder.innerHTML = letter.innerHTML;
                 
-                // Exakte Layout-Größe des ursprünglichen Buchstabens übernehmen
-                // Verwende CSS-Variablen statt getBoundingClientRect(), da Transforms die visuelle Größe ändern,
-                // aber nicht die Layout-Größe (die immer var(--letter-size) × var(--letter-size) ist)
-                const computedSize = getComputedStyle(document.documentElement)
-                    .getPropertyValue('--letter-size').trim() || '3rem';
-                placeholder.style.width = computedSize;
-                placeholder.style.height = computedSize;
-                placeholder.style.minWidth = computedSize;
-                placeholder.style.minHeight = computedSize;
+                // Größe kommt von .letter-placeholder CSS (var(--letter-size)) – identisch zu .letter
                 
                 // Platzhalter ersetzt Buchstaben in einem Schritt (replaceChild), kein N+1-Zustand, ein Reflow
                 const wordContainer = letter.parentNode;
@@ -2208,8 +2218,7 @@
                     letter.parentNode.removeChild(letter);
                 }
                 
-                // Alle Position- und Transform-Styles vollständig zurücksetzen
-                // Alle Inline-Styles entfernen, die die Positionierung beeinflussen könnten
+                // Alle Position-, Transform-, Transition- und Darstellungs-Styles vollständig zurücksetzen
                 letter.style.position = '';
                 letter.style.left = '';
                 letter.style.top = '';
@@ -2217,8 +2226,11 @@
                 letter.style.bottom = '';
                 letter.style.zIndex = '';
                 letter.style.transform = '';
+                letter.style.transition = '';
                 letter.style.margin = '';
                 letter.style.padding = '';
+                letter.style.opacity = '';
+                letter.style.filter = '';
                 
                 // Reflow erzwingen, um sicherzustellen, dass Styles zurückgesetzt sind
                 void letter.offsetHeight;
@@ -2283,10 +2295,9 @@
                 }
                 
                 // Basis-Transform-Werte NACH dem Hinzufügen zum Container wiederherstellen
-                // Stellt sicher, dass Hitbox korrekt positioniert ist
                 updateLetterBaseTransform(letter);
                 
-                // Weitere Reflow erzwingen, um sicherzustellen, dass Transform angewendet ist
+                // Reflow erzwingen, damit Layout berechnet ist
                 void letter.offsetHeight;
                 
                 letter.dataset.inSlot = 'false';
@@ -2576,8 +2587,14 @@
             // Bereitgestellte Buchstaben verwenden oder alle, falls keine bereitgestellt wurden
             const lettersToProcess = lettersToReset || letters;
             
+            // Tatsächliche Buchstabenbreite ermitteln (nicht geschätzt)
+            const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+            const actualLetterWidth = lettersToProcess.length > 0
+                ? lettersToProcess[0].getBoundingClientRect().width
+                : (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--letter-size')) || 3) * rootFontSize;
+            
             // Ursprüngliche Positionen für jeden Buchstaben speichern
-            const letterOriginalPositions = new Map();
+            const targetPositions = new Map();
             
             lettersToProcess.forEach(letter => {
                 const originalWord = letter.dataset.originalWord;
@@ -2585,21 +2602,31 @@
                 const wordContainer = document.getElementById(wordContainerId);
                 
                 if (wordContainer) {
-                    const letterIndex = parseInt(letter.dataset.letterIndex) || 0;
+                    const wordIndex = getDatasetInt(letter, 'originalWordIndex');
+                    const letterIndex = getDatasetInt(letter, 'letterIndex');
+                    const savedKey = `${wordIndex}-${letterIndex}`;
                     
-                    // Ursprüngliche Position basierend auf Container und Buchstaben-Index berechnen
+                    // Gespeicherte Position verwenden, falls vorhanden (exakte Layout-Position)
+                    const savedPos = letterOriginalPositions.get(savedKey);
+                    if (savedPos) {
+                        targetPositions.set(letter, {
+                            container: wordContainer,
+                            x: savedPos.x,
+                            y: savedPos.y,
+                            letterIndex: letterIndex
+                        });
+                        return;
+                    }
+                    
+                    // Fallback: Position aus Container und tatsächlicher Buchstabenbreite berechnen
                     const containerRect = wordContainer.getBoundingClientRect();
-                    const containerCenterX = containerRect.left + (containerRect.width / 2);
                     const containerCenterY = containerRect.top + (containerRect.height / 2);
-                    
-                    // Buchstaben-Position innerhalb des Wortes schätzen
                     const letterSpacing = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--source-letter-spacing')) || 0;
-                    const estimatedLetterWidth = 60;
-                    const totalWordWidth = (originalWord.length - 1) * (estimatedLetterWidth + letterSpacing);
-                    const startX = containerCenterX - (totalWordWidth / 2);
-                    const letterX = startX + (letterIndex * (estimatedLetterWidth + letterSpacing)) + (estimatedLetterWidth / 2);
+                    const totalWordWidth = (originalWord.length - 1) * (actualLetterWidth + letterSpacing);
+                    const startX = containerRect.left + (containerRect.width / 2) - (totalWordWidth / 2);
+                    const letterX = startX + (letterIndex * (actualLetterWidth + letterSpacing)) + (actualLetterWidth / 2);
                     
-                    letterOriginalPositions.set(letter, {
+                    targetPositions.set(letter, {
                         container: wordContainer,
                         x: letterX,
                         y: containerCenterY,
@@ -2625,7 +2652,7 @@
 
             // Buchstaben mit sanftem Übergang an ursprüngliche Positionen zurückbringen
             lettersToProcess.forEach((letter, index) => {
-                const originalPos = letterOriginalPositions.get(letter);
+                const originalPos = targetPositions.get(letter);
                 
                 if (originalPos) {
                     // Rückgaben leicht versetzt für visuellen Effekt
