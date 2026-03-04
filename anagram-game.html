@@ -88,9 +88,10 @@
             transition: opacity 0.6s ease;
         }
         /* Untere Schriftreihe (Lösung) beim Gewinn über dem Feuerwerks-Canvas anzeigen */
+        /* bottom: Kompensation für game-container margin-top, damit keine vertikale Versetzung */
         body.win-mode #drop-zone.visible {
             position: fixed !important;
-            bottom: 5% !important;
+            bottom: calc(5% - var(--game-container-margin-top, -2rem)) !important;
             left: 5% !important;
             right: 5% !important;
             top: auto !important;
@@ -434,7 +435,7 @@
         }
 
         #burger-menu {
-            display: none; /* Deaktiviert */
+            display: none !important; /* Deaktiviert */
             position: fixed;
             top: 10px;
             right: 10px;
