@@ -81,11 +81,23 @@
             opacity: 1;
             z-index: 1; /* über Wörter im Container, Bild liegt unter dem Feuerwerks-Canvas */
         }
-        /* Beim Gewinn Buchstaben ausblenden, damit nur das Bild sichtbar ist */
+        /* Beim Gewinn: Quell-Buchstaben ausblenden, Bild und Lösung (Drop-Zone) bleiben sichtbar */
         #words-container.win-image-visible .word {
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.6s ease;
+        }
+        /* Untere Schriftreihe (Lösung) beim Gewinn über dem Feuerwerks-Canvas anzeigen */
+        body.win-mode #drop-zone.visible {
+            position: fixed !important;
+            bottom: 5% !important;
+            left: 5% !important;
+            right: 5% !important;
+            top: auto !important;
+            z-index: 1003 !important; /* über Feuerwerks-Canvas (1002) */
+            opacity: 1 !important;
+            visibility: visible !important;
+            display: flex !important;
         }
         /* Beim Gewinn Overflow erlauben, damit vergrößertes Bild nicht abgeschnitten wird */
         #words-container.win-image-visible {
@@ -250,6 +262,7 @@
             bottom: 5%;
             left: 5%;
             right: 5%;
+            display: flex; /* Immer flex, damit Layout beim Reset (ohne .visible) erhalten bleibt */
             flex-direction: column;
             justify-content: center;
             align-items: center;
@@ -421,7 +434,7 @@
         }
 
         #burger-menu {
-            display: none !important; /* Ausgeblendet */
+            display: none; /* Deaktiviert */
             position: fixed;
             top: 10px;
             right: 10px;
@@ -2454,13 +2467,15 @@
                 stopFireworks();
             }
             
-            // Zuerst Drop-Zone mit sanftem Übergang verstecken
+            // Drop-Zone zurücksetzen: zuerst zurück in game-container (falls ausgelagert), dann verstecken
             if (!cachedElements.dropZone) {
                 cachedElements.dropZone = document.getElementById('drop-zone');
             }
-            cachedElements.dropZone.classList.remove('visible');
-            dropZoneVisible = false;
-
+            const gameContainer = document.getElementById('game-container');
+            if (cachedElements.dropZone && gameContainer && cachedElements.dropZone.dataset.originalParent === 'game-container') {
+                gameContainer.appendChild(cachedElements.dropZone);
+                delete cachedElements.dropZone.dataset.originalParent;
+            }
             // Drop-Pfeil verstecken
             if (!cachedElements.dropArrow) {
                 cachedElements.dropArrow = document.getElementById('drop-arrow');
@@ -2495,87 +2510,58 @@
             });
             letterPlaceholder = null;
 
-            // Warten, bis Übergänge abgeschlossen sind, bevor Chaos-Phase beginnt
-            setTimeout(() => {
-                // Nur Buchstaben sammeln, die zurückgesetzt werden müssen (aus Slots oder gezogen)
-                const lettersToReset = [];
-                
-                // Buchstaben aus Slots sammeln
-                if (!cachedElements.slots) {
-                    cachedElements.slots = document.querySelectorAll('.drop-slot');
+            // Buchstaben sammeln, BEVOR die Drop-Zone ausgeblendet wird (Layout bleibt korrekt)
+            const lettersToReset = [];
+            const slots = document.querySelectorAll('.drop-slot');
+            slots.forEach(slot => {
+                const letter = slot.querySelector('.letter');
+                if (letter) {
+                    const center = getElementCenter(letter);
+                    slot.removeChild(letter);
+                    slot.classList.remove('filled');
+                    document.body.appendChild(letter);
+                    letter.style.position = 'fixed';
+                    letter.style.left = center.x + 'px';
+                    letter.style.top = center.y + 'px';
+                    letter.style.transform = 'translate(-50%, -50%)';
+                    letter.style.zIndex = Z_INDEX_ANIMATION;
+                    lettersToReset.push(letter);
                 }
-                cachedElements.slots.forEach(slot => {
-                    const letter = slot.querySelector('.letter');
-                    if (letter) {
-                        // Position VOR dem Entfernen aus dem DOM ermitteln
+            });
+
+            // Buchstaben in falschen Containern sammeln
+            letters.forEach(letter => {
+                if (letter.parentNode && letter.parentNode.classList.contains('word')) {
+                    const originalWord = letter.dataset.originalWord;
+                    const wordContainerId = `word-${originalWord.toLowerCase()}`;
+                    const wordContainer = document.getElementById(wordContainerId);
+                    if (wordContainer && letter.parentNode !== wordContainer) {
                         const center = getElementCenter(letter);
-                        
-                        // Vom Slot entfernen
-                        slot.removeChild(letter);
-                        slot.classList.remove('filled');
-                        // Zum Body hinzufügen für Reset-Animation
+                        letter.parentNode.removeChild(letter);
                         document.body.appendChild(letter);
-                        
-                        // Sofort feste Position setzen, um Sprung zu (0,0) zu verhindern
                         letter.style.position = 'fixed';
                         letter.style.left = center.x + 'px';
                         letter.style.top = center.y + 'px';
                         letter.style.transform = 'translate(-50%, -50%)';
                         letter.style.zIndex = Z_INDEX_ANIMATION;
-                        
                         lettersToReset.push(letter);
                     }
-                });
-
-                // Nur Buchstaben sammeln, die NICHT in ihren ursprünglichen Containern sind
-                // (d.h. Buchstaben, die gezogen aber nicht in Slots platziert wurden)
-                letters.forEach(letter => {
-                    // Überspringe Buchstaben, die bereits in ihren ursprünglichen Wort-Containern sind
-                    // Diese sollten überhaupt nicht bewegt werden
-                    if (letter.parentNode && letter.parentNode.classList.contains('word')) {
-                        // Prüfe, ob Buchstabe im korrekten Wort-Container ist
-                        const originalWord = letter.dataset.originalWord;
-                        const wordContainerId = `word-${originalWord.toLowerCase()}`;
-                        const wordContainer = document.getElementById(wordContainerId);
-                        
-                        // Nur zurücksetzen, wenn Buchstabe NICHT in seinem korrekten ursprünglichen Container ist
-                        if (wordContainer && letter.parentNode !== wordContainer) {
-                            // Position VOR dem Entfernen aus dem DOM ermitteln
-                            const center = getElementCenter(letter);
-                            
-                            // Vom falschen Container entfernen
-                            letter.parentNode.removeChild(letter);
-                            // Zum Body hinzufügen für Reset-Animation
-                            document.body.appendChild(letter);
-                            
-                            // Sofort feste Position setzen, um Sprung zu (0,0) zu verhindern
-                            letter.style.position = 'fixed';
-                            letter.style.left = center.x + 'px';
-                            letter.style.top = center.y + 'px';
-                            letter.style.transform = 'translate(-50%, -50%)';
-                            letter.style.zIndex = Z_INDEX_ANIMATION;
-                            
-                            lettersToReset.push(letter);
-                        }
-                        // Wenn Buchstabe bereits im korrekten Container ist, nichts tun
-                    } else if (letter.parentNode && letter.parentNode === document.body) {
-                        // Buchstabe ist bereits im Body (vielleicht vom Dragging), zur Reset-Liste hinzufügen
-                        lettersToReset.push(letter);
-                    }
-                });
-
-                // Nur Buchstaben zurücksetzen, die tatsächlich verschoben werden müssen
-                if (lettersToReset.length > 0) {
-                    returnLettersToOriginalPositions(lettersToReset);
+                } else if (letter.parentNode && letter.parentNode === document.body) {
+                    lettersToReset.push(letter);
                 }
-                
-                // Reset-Flag zurücksetzen, nachdem alle Buchstaben zurückgesetzt wurden
-                // Warte zusätzlich auf die Animation, bevor der Flag zurückgesetzt wird
-                setTimeout(() => {
-                    isResetting = false;
-                }, ANIMATION_DURATION_LONG);
-            }, 500); // Warten auf Drop-Zone-Fade-Out
+            });
 
+            // Drop-Zone ausblenden (nach Buchstaben-Sammlung)
+            cachedElements.dropZone.classList.remove('visible');
+            dropZoneVisible = false;
+
+            if (lettersToReset.length > 0) {
+                returnLettersToOriginalPositions(lettersToReset);
+            }
+
+            setTimeout(() => {
+                isResetting = false;
+            }, ANIMATION_DURATION_LONG);
         }
 
         /**
@@ -3123,11 +3109,19 @@
         function handleAnagramSolved(e) {
             const winImageContainer = document.getElementById('win-image-container');
             const wordsContainer = document.getElementById('words-container');
+            const dropZone = document.getElementById('drop-zone');
+            const gameContainer = document.getElementById('game-container');
             if (winImageContainer) {
                 winImageContainer.classList.add('visible');
             }
             if (wordsContainer) {
                 wordsContainer.classList.add('win-image-visible');
+            }
+            if (dropZone && gameContainer) {
+                dropZone.classList.add('visible');
+                /* Drop-Zone zu body verschieben, damit sie über dem Feuerwerks-Canvas (z-index 1002) erscheint */
+                dropZone.dataset.originalParent = 'game-container';
+                document.body.appendChild(dropZone);
             }
             document.body.classList.add('win-mode');
             if (!cachedElements.dropArrow) {
