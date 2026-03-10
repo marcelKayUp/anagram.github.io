@@ -229,6 +229,12 @@
             cursor: default;
         }
 
+        /* Beim Reset: Buchstaben sofort ausblenden; Einblendung beim Entfernen der Klasse über .letter */
+        .letter.letters-hidden-during-reset {
+            opacity: 0;
+            transition: none;
+        }
+
         .letter[data-in-slot="true"] {
             animation: none;
             filter: blur(0px) !important;
@@ -2326,6 +2332,73 @@
             }
         }
 
+        /**
+         * Setzt einen Buchstaben ohne Animation in seinen Ursprungs-Container (für Reset Phase 2).
+         * Styles werden zurückgesetzt, DOM-Einfügeposition korrekt; Wobble/Blur und inSlot werden nicht gesetzt.
+         * @param {HTMLElement} letter - Das Buchstaben-Element
+         * @returns {void}
+         */
+        function placeLetterInOriginalContainerSilent(letter) {
+            const originalWord = letter.dataset.originalWord;
+            if (!originalWord) return;
+            const wordContainerId = `word-${originalWord.toLowerCase()}`;
+            const wordContainer = document.getElementById(wordContainerId);
+            if (!wordContainer) return;
+
+            letter.classList.remove('dragging');
+            if (letter.parentNode) {
+                letter.parentNode.removeChild(letter);
+            }
+
+            letter.style.position = '';
+            letter.style.left = '';
+            letter.style.top = '';
+            letter.style.right = '';
+            letter.style.bottom = '';
+            letter.style.zIndex = '';
+            letter.style.transform = '';
+            letter.style.transition = '';
+            letter.style.margin = '';
+            letter.style.padding = '';
+            letter.style.opacity = '';
+            letter.style.filter = '';
+            letter.style.animation = '';
+
+            const placeholder = getPlaceholderForLetter(letter);
+            if (placeholder && placeholder.parentNode === wordContainer) {
+                wordContainer.replaceChild(letter, placeholder);
+                if (letterPlaceholder === placeholder) letterPlaceholder = null;
+            } else {
+                const letterIndex = getDatasetInt(letter, 'letterIndex');
+                const existingLetters = wordContainer.querySelectorAll('.letter:not(.letter-placeholder)');
+                let insertBefore = null;
+                for (let i = 0; i < existingLetters.length; i++) {
+                    const existingIndex = getDatasetInt(existingLetters[i], 'letterIndex');
+                    if (existingIndex > letterIndex) {
+                        insertBefore = existingLetters[i];
+                        break;
+                    }
+                }
+                if (!insertBefore) {
+                    const placeholdersInContainer = wordContainer.querySelectorAll('.letter-placeholder');
+                    for (let i = 0; i < placeholdersInContainer.length; i++) {
+                        const placeholderIndex = getDatasetInt(placeholdersInContainer[i], 'letterIndex');
+                        if (placeholderIndex > letterIndex) {
+                            insertBefore = placeholdersInContainer[i];
+                            break;
+                        }
+                    }
+                }
+                if (insertBefore) {
+                    wordContainer.insertBefore(letter, insertBefore);
+                } else {
+                    wordContainer.appendChild(letter);
+                }
+            }
+            updateLetterBaseTransform(letter);
+            void letter.offsetHeight;
+        }
+
         // ============================================================================
         // UI-HILFSFUNKTIONEN
         // ============================================================================
@@ -2442,33 +2515,38 @@
         }
 
         /**
-         * Setzt das Spiel in den Ausgangszustand zurück
-         * Versteckt Drop-Zone, setzt alle Buchstaben zurück und startet Animationen neu
+         * Setzt das Spiel in den Ausgangszustand zurück (4-Phasen-Prinzip).
+         * Phase 1: Alle Buchstaben ausblenden → Phase 2: DOM-Reset (ohne sichtbare Animation) →
+         * Phase 3: Wobble/Blur starten → Phase 4: Einblenden.
          * @returns {void}
          */
         function resetGame() {
-            // Setze Reset-Flag, um neue Drags während des Resets zu verhindern
             isResetting = true;
-            
-            // Wenn ein Drag aktiv ist, beende ihn zuerst
+
             if (draggedLetter) {
                 draggedLetter.classList.remove('dragging');
                 returnLetterToOriginalPosition(draggedLetter);
                 draggedLetter = null;
             }
-            
-            // Stoppe Win-Reset-Timer falls aktiv
             if (winResetTimer) {
                 clearTimeout(winResetTimer);
                 winResetTimer = null;
             }
-            
-            // Stoppe Feuerwerks-Show wenn aktiv
             if (typeof stopFireworks === 'function') {
                 stopFireworks();
             }
-            
-            // Drop-Zone zurücksetzen: zuerst zurück in game-container (falls ausgelagert), dann verstecken
+
+            // Phase 1: Alle Buchstaben ausblenden
+            letters.forEach(l => l.classList.add('letters-hidden-during-reset'));
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    runResetPhase2();
+                });
+            });
+        }
+
+        /** Phase 2: DOM-Reset – Slots leeren, Buchstaben in Ursprungs-Container, Drop-Zone verstecken (unsichtbar). */
+        function runResetPhase2() {
             if (!cachedElements.dropZone) {
                 cachedElements.dropZone = document.getElementById('drop-zone');
             }
@@ -2477,15 +2555,12 @@
                 gameContainer.appendChild(cachedElements.dropZone);
                 delete cachedElements.dropZone.dataset.originalParent;
             }
-            // Drop-Pfeil verstecken
             if (!cachedElements.dropArrow) {
                 cachedElements.dropArrow = document.getElementById('drop-arrow');
             }
             if (cachedElements.dropArrow) {
                 cachedElements.dropArrow.classList.remove('visible');
             }
-
-            // Wörter-Container-Position mit sanftem Übergang zurücksetzen
             if (!cachedElements.wordsContainer) {
                 cachedElements.wordsContainer = document.getElementById('words-container');
             }
@@ -2498,11 +2573,8 @@
                 winImageContainer.classList.remove('visible');
             }
             document.body.classList.remove('win-mode');
-            
-            // Cache invalidieren, da Slots sich ändern können
             cachedElements.slots = null;
-            
-            // Alle Platzhalter entfernen
+
             const allPlaceholders = document.querySelectorAll('.letter-placeholder');
             allPlaceholders.forEach(placeholder => {
                 if (placeholder.parentNode) {
@@ -2511,58 +2583,67 @@
             });
             letterPlaceholder = null;
 
-            // Buchstaben sammeln, BEVOR die Drop-Zone ausgeblendet wird (Layout bleibt korrekt)
-            const lettersToReset = [];
             const slots = document.querySelectorAll('.drop-slot');
             slots.forEach(slot => {
                 const letter = slot.querySelector('.letter');
                 if (letter) {
-                    const center = getElementCenter(letter);
                     slot.removeChild(letter);
                     slot.classList.remove('filled');
-                    document.body.appendChild(letter);
-                    letter.style.position = 'fixed';
-                    letter.style.left = center.x + 'px';
-                    letter.style.top = center.y + 'px';
-                    letter.style.transform = 'translate(-50%, -50%)';
-                    letter.style.zIndex = Z_INDEX_ANIMATION;
-                    lettersToReset.push(letter);
+                    placeLetterInOriginalContainerSilent(letter);
                 }
             });
-
-            // Buchstaben in falschen Containern sammeln
             letters.forEach(letter => {
                 if (letter.parentNode && letter.parentNode.classList.contains('word')) {
                     const originalWord = letter.dataset.originalWord;
-                    const wordContainerId = `word-${originalWord.toLowerCase()}`;
-                    const wordContainer = document.getElementById(wordContainerId);
+                    const wordContainerId = originalWord ? `word-${originalWord.toLowerCase()}` : '';
+                    const wordContainer = wordContainerId ? document.getElementById(wordContainerId) : null;
                     if (wordContainer && letter.parentNode !== wordContainer) {
-                        const center = getElementCenter(letter);
-                        letter.parentNode.removeChild(letter);
-                        document.body.appendChild(letter);
-                        letter.style.position = 'fixed';
-                        letter.style.left = center.x + 'px';
-                        letter.style.top = center.y + 'px';
-                        letter.style.transform = 'translate(-50%, -50%)';
-                        letter.style.zIndex = Z_INDEX_ANIMATION;
-                        lettersToReset.push(letter);
+                        placeLetterInOriginalContainerSilent(letter);
                     }
                 } else if (letter.parentNode && letter.parentNode === document.body) {
-                    lettersToReset.push(letter);
+                    placeLetterInOriginalContainerSilent(letter);
                 }
             });
 
-            // Drop-Zone ausblenden (nach Buchstaben-Sammlung)
-            cachedElements.dropZone.classList.remove('visible');
+            if (cachedElements.dropZone) {
+                cachedElements.dropZone.classList.remove('visible');
+            }
             dropZoneVisible = false;
 
-            if (lettersToReset.length > 0) {
-                returnLettersToOriginalPositions(lettersToReset);
-            }
+            runResetPhase3();
+        }
 
+        /** Phase 3: Wobble/Blur-Animationen starten (Buchstaben noch unsichtbar). */
+        function runResetPhase3() {
+            letters.forEach(l => {
+                l.dataset.inSlot = 'false';
+                if (l.style.getPropertyValue('--wobble-delay')) {
+                    l.style.animation = `wobble var(--wobble-duration, 4s) ease-in-out infinite, blurPulse var(--blur-duration, 3s) ease-in-out infinite`;
+                    l.style.animationDelay = `var(--wobble-delay, 0s), var(--blur-delay, 0s)`;
+                } else {
+                    const wobbleDelay = (Math.random() * 8) - 4;
+                    const blurDelay = (Math.random() * 6) - 3;
+                    const wobbleDuration = animationControls.wobbleDurationMin +
+                        Math.random() * (animationControls.wobbleDurationMax - animationControls.wobbleDurationMin);
+                    const blurDuration = animationControls.blurDurationMin +
+                        Math.random() * (animationControls.blurDurationMax - animationControls.blurDurationMin);
+                    l.style.setProperty('--wobble-delay', `${wobbleDelay}s`);
+                    l.style.setProperty('--blur-delay', `${blurDelay}s`);
+                    l.style.setProperty('--wobble-duration', `${wobbleDuration}s`);
+                    l.style.setProperty('--blur-duration', `${blurDuration}s`);
+                    l.style.animation = `wobble var(--wobble-duration, 4s) ease-in-out infinite, blurPulse var(--blur-duration, 3s) ease-in-out infinite`;
+                    l.style.animationDelay = `var(--wobble-delay, 0s), var(--blur-delay, 0s)`;
+                }
+            });
+            runResetPhase4();
+        }
+
+        /** Phase 4: Alle Buchstaben einblenden; danach Reset abschließen. */
+        function runResetPhase4() {
+            letters.forEach(l => l.classList.remove('letters-hidden-during-reset'));
             setTimeout(() => {
                 isResetting = false;
-            }, ANIMATION_DURATION_LONG);
+            }, 350);
         }
 
         /**
@@ -2631,10 +2712,9 @@
                     letter.style.zIndex = Z_INDEX_ANIMATION;
                 }
                 
-                // Aktuelle Animationen stoppen
+                // Aktuelle Animationen stoppen (Opazität nicht überschreiben – Klasse letters-hidden-during-reset hält Buchstaben ausgeblendet)
                 letter.style.animation = 'none';
                 letter.style.filter = 'blur(0px)';
-                letter.style.opacity = '1';
             });
 
             // Buchstaben mit sanftem Übergang an ursprüngliche Positionen zurückbringen
@@ -2656,19 +2736,16 @@
                         setTimeout(() => {
                             returnLetterToOriginalPosition(letter);
                             
-                            // Animationen wiederherstellen, nachdem alle Buchstaben zurück sind
+                            // Nach Ankunft: Phase 3 Wobble/Blur wiederherstellen, Phase 4 Einblenden
                             if (index === lettersToProcess.length - 1) {
-                                setTimeout(() => {
-                                    lettersToProcess.forEach(l => {
-                                        l.dataset.inSlot = 'false';
-                                        
-                                        // Individuelle Animation erneut aktivieren
-                                        if (l.style.getPropertyValue('--wobble-delay')) {
-                                            l.style.animation = `wobble var(--wobble-duration, 4s) ease-in-out infinite, blurPulse var(--blur-duration, 3s) ease-in-out infinite`;
-                                            l.style.animationDelay = `var(--wobble-delay, 0s), var(--blur-delay, 0s)`;
-                                        }
-                                    });
-                                }, ANIMATION_DURATION_LONG);
+                                lettersToProcess.forEach(l => {
+                                    l.dataset.inSlot = 'false';
+                                    if (l.style.getPropertyValue('--wobble-delay')) {
+                                        l.style.animation = `wobble var(--wobble-duration, 4s) ease-in-out infinite, blurPulse var(--blur-duration, 3s) ease-in-out infinite`;
+                                        l.style.animationDelay = `var(--wobble-delay, 0s), var(--blur-delay, 0s)`;
+                                    }
+                                });
+                                lettersToProcess.forEach(l => l.classList.remove('letters-hidden-during-reset'));
                             }
                         }, ANIMATION_DURATION_LONG);
                     }, index * STAGGER_DELAY);
