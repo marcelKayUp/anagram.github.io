@@ -2536,17 +2536,44 @@
                 stopFireworks();
             }
 
-            // Phase 1: Alle Buchstaben ausblenden
+            const winImageContainer = document.getElementById('win-image-container');
+            const wasInWinState = winImageContainer && winImageContainer.classList.contains('visible');
+
+            if (wasInWinState) {
+                // Phase 1: Bild und Lösungszeile gleichzeitig sanft ausblenden
+                // Drop-Zone zuerst ausblenden (0.5s), bevor win-mode entfernt wird (sonst Positions-Sprung)
+                if (!cachedElements.dropZone) {
+                    cachedElements.dropZone = document.getElementById('drop-zone');
+                }
+                if (cachedElements.dropZone) {
+                    cachedElements.dropZone.classList.remove('visible');
+                }
+                winImageContainer.classList.remove('visible'); // 0.6s CSS-Transition
+                setTimeout(() => {
+                    // Beide ausgeblendet → win-mode sicher entfernen
+                    document.body.classList.remove('win-mode');
+                    runResetPhase2_hideLetters();
+                }, 650); // knapp über 0.6s CSS-Transition
+            } else {
+                // Kein Win-Zustand: direkt zu Phase 2
+                document.body.classList.remove('win-mode');
+                runResetPhase2_hideLetters();
+            }
+        }
+
+        /** Phase 2: Buchstaben sofort unsichtbar machen. */
+        function runResetPhase2_hideLetters() {
             letters.forEach(l => l.classList.add('letters-hidden-during-reset'));
+            // Doppelter rAF: sicherstellen, dass opacity:0 gerendert ist bevor DOM-Umbau startet
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
-                    runResetPhase2();
+                    runResetPhase3_domCleanup();
                 });
             });
         }
 
-        /** Phase 2: DOM-Reset – Slots leeren, Buchstaben in Ursprungs-Container, Drop-Zone verstecken (unsichtbar). */
-        function runResetPhase2() {
+        /** Phase 3: DOM-Reset – alles ist unsichtbar, sicher aufräumen. */
+        function runResetPhase3_domCleanup() {
             if (!cachedElements.dropZone) {
                 cachedElements.dropZone = document.getElementById('drop-zone');
             }
@@ -2564,15 +2591,21 @@
             if (!cachedElements.wordsContainer) {
                 cachedElements.wordsContainer = document.getElementById('words-container');
             }
+
+            // shifted-up und win-image-visible sofort entfernen (ohne Transition – alles ist eh unsichtbar)
             if (cachedElements.wordsContainer) {
+                cachedElements.wordsContainer.style.transition = 'none';
                 cachedElements.wordsContainer.classList.remove('shifted-up');
                 cachedElements.wordsContainer.classList.remove('win-image-visible');
+                void cachedElements.wordsContainer.offsetHeight; // Reflow erzwingen
+                cachedElements.wordsContainer.style.transition = '';
             }
+
             const winImageContainer = document.getElementById('win-image-container');
             if (winImageContainer) {
                 winImageContainer.classList.remove('visible');
             }
-            document.body.classList.remove('win-mode');
+
             cachedElements.slots = null;
 
             const allPlaceholders = document.querySelectorAll('.letter-placeholder');
@@ -2610,11 +2643,11 @@
             }
             dropZoneVisible = false;
 
-            runResetPhase3();
+            runResetPhase4_startAnimations();
         }
 
-        /** Phase 3: Wobble/Blur-Animationen starten (Buchstaben noch unsichtbar). */
-        function runResetPhase3() {
+        /** Phase 4: Wobble/Blur-Animationen starten (Buchstaben noch unsichtbar). */
+        function runResetPhase4_startAnimations() {
             letters.forEach(l => {
                 l.dataset.inSlot = 'false';
                 if (l.style.getPropertyValue('--wobble-delay')) {
@@ -2635,11 +2668,11 @@
                     l.style.animationDelay = `var(--wobble-delay, 0s), var(--blur-delay, 0s)`;
                 }
             });
-            runResetPhase4();
+            runResetPhase5_fadeInLetters();
         }
 
-        /** Phase 4: Alle Buchstaben einblenden; danach Reset abschließen. */
-        function runResetPhase4() {
+        /** Phase 5: Buchstaben sanft einblenden, Spielmechanik auf Anfang setzen. */
+        function runResetPhase5_fadeInLetters() {
             letters.forEach(l => l.classList.remove('letters-hidden-during-reset'));
             setTimeout(() => {
                 isResetting = false;
